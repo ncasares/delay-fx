@@ -244,6 +244,14 @@ h1 {
 
 /* --- Tap Tempo --- */
 
+.tap-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: auto;
+}
+
 .tap-btn {
   min-width: 80px;
   height: 50px;
@@ -256,8 +264,6 @@ h1 {
   letter-spacing: 0.1em;
   cursor: pointer;
   transition: all 0.1s;
-  align-self: center;
-  margin-left: auto;
 }
 
 .tap-btn:hover {
@@ -267,6 +273,23 @@ h1 {
 .tap-btn.pulse {
   background: #00b4d8;
   color: #111;
+  border-color: #00b4d8;
+}
+
+.subdiv-select {
+  background: #222;
+  color: #999;
+  border: 1px solid #333;
+  border-radius: 3px;
+  padding: 0.2rem 0.3rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-align: center;
+  outline: none;
+  width: 80px;
+}
+
+.subdiv-select:focus {
   border-color: #00b4d8;
 }
 
@@ -299,6 +322,114 @@ h1 {
   background: #d4380d;
   color: #fff;
   border-color: #d4380d;
+}
+
+/* --- MIDI --- */
+
+.midi-section {
+  margin-bottom: 1.25rem;
+}
+
+.midi-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.midi-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #888;
+}
+
+.midi-toggle {
+  background: #222;
+  color: #999;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.midi-toggle:hover {
+  background: #2a2a2a;
+  color: #ddd;
+  border-color: #555;
+}
+
+.midi-status {
+  font-size: 0.65rem;
+  color: #666;
+  margin-left: auto;
+}
+
+.midi-map-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.midi-map-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  background: #1e1e1e;
+  border-radius: 4px;
+}
+
+.midi-map-label {
+  font-size: 0.7rem;
+  color: #aaa;
+  min-width: 90px;
+  font-weight: 600;
+}
+
+.midi-map-cc {
+  font-size: 0.7rem;
+  color: #00b4d8;
+  min-width: 50px;
+  font-variant-numeric: tabular-nums;
+}
+
+.midi-learn-btn,
+.midi-clear-btn {
+  background: #222;
+  color: #888;
+  border: 1px solid #333;
+  border-radius: 3px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.6rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.midi-learn-btn:hover {
+  color: #ddd;
+  border-color: #555;
+}
+
+.midi-learn-btn.learning {
+  background: #00b4d8;
+  color: #111;
+  border-color: #00b4d8;
+}
+
+.midi-clear-btn {
+  margin-left: auto;
+  padding: 0.2rem 0.35rem;
+}
+
+.midi-clear-btn:hover {
+  color: #e04040;
+  border-color: #e04040;
 }
 
 /* --- Meters --- */

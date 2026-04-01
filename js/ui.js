@@ -99,9 +99,26 @@ export function buildUI(container) {
   tweez.wrapper.classList.add('tweez-slider');
   tweakRow.append(tweak.wrapper, tweez.wrapper);
 
-  // Tap tempo
+  // Tap tempo + subdivision
+  const tapGroup = el('div', 'tap-group');
   const tapBtn = el('button', 'tap-btn', 'TAP');
-  tweakRow.appendChild(tapBtn);
+  const subdivSelect = document.createElement('select');
+  subdivSelect.className = 'subdiv-select';
+  const subdivisions = [
+    { label: '1/4', value: 1 },
+    { label: 'dot 1/8', value: 0.75 },
+    { label: '1/8 trip', value: 2 / 3 },
+    { label: '1/8', value: 0.5 },
+    { label: 'dot 1/4', value: 1.5 },
+  ];
+  for (const s of subdivisions) {
+    const opt = document.createElement('option');
+    opt.value = s.value;
+    opt.textContent = s.label;
+    subdivSelect.appendChild(opt);
+  }
+  tapGroup.append(tapBtn, subdivSelect);
+  tweakRow.appendChild(tapGroup);
   paramsSection.appendChild(tweakRow);
 
   container.appendChild(paramsSection);
@@ -189,6 +206,7 @@ export function buildUI(container) {
     tweak,
     tweez,
     tapBtn,
+    subdivSelect,
     inputGain: inputGain.input,
     outputGain: outputGain.input,
     bypassBtn,
@@ -244,6 +262,16 @@ export function setupTapTempo(ui, workletNode) {
   const MAX_TAPS = 4;
   const TIMEOUT = 2000;
 
+  let lastTappedMs = null;
+
+  function applySubdivision() {
+    if (lastTappedMs === null) return;
+    const subdiv = parseFloat(ui.subdivSelect.value) || 1;
+    const clamped = Math.max(10, Math.min(2000, lastTappedMs * subdiv));
+    ui.time.value = Math.round(clamped);
+    ui.time.dispatchEvent(new Event('input'));
+  }
+
   function handleTap() {
     const now = performance.now();
 
@@ -259,14 +287,12 @@ export function setupTapTempo(ui, workletNode) {
       for (let i = 1; i < tapTimes.length; i++) {
         total += tapTimes[i] - tapTimes[i - 1];
       }
-      const avgMs = total / (tapTimes.length - 1);
-      const clamped = Math.max(10, Math.min(2000, avgMs));
-
-      ui.time.value = Math.round(clamped);
-      ui.time.dispatchEvent(new Event('input'));
+      lastTappedMs = total / (tapTimes.length - 1);
+      applySubdivision();
     }
   }
 
+  ui.subdivSelect.addEventListener('change', applySubdivision);
   ui.tapBtn.addEventListener('click', handleTap);
 
   document.addEventListener('keydown', (e) => {

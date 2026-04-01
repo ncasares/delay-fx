@@ -4,6 +4,7 @@
 
 import { buildUI, connectParams, setupTapTempo, startMeters, populateDevices } from './ui.js';
 import { getAllPresets, captureState, applyPreset, saveUserPreset, deleteUserPreset } from './presets.js';
+import { setupMIDI } from './midi.js';
 
 let audioCtx = null;
 let workletNode = null;
@@ -86,6 +87,9 @@ ui.presetDeleteBtn.addEventListener('click', () => {
   deleteUserPreset(name);
   refreshPresetList();
 });
+
+// --- MIDI ---
+setupMIDI(ui);
 
 async function startAudio(deviceId) {
   // Create context on first call
