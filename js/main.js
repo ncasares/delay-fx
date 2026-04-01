@@ -3,6 +3,7 @@
 // ============================================================
 
 import { buildUI, connectParams, setupTapTempo, startMeters, populateDevices } from './ui.js';
+import { getAllPresets, captureState, applyPreset, saveUserPreset, deleteUserPreset } from './presets.js';
 
 let audioCtx = null;
 let workletNode = null;
@@ -12,6 +13,79 @@ let inputAnalyser = null;
 let outputAnalyser = null;
 
 const ui = buildUI(document.getElementById('app'));
+
+// --- Presets ---
+
+function refreshPresetList(selectName) {
+  const presets = getAllPresets();
+  ui.presetSelect.innerHTML = '';
+
+  const emptyOpt = document.createElement('option');
+  emptyOpt.value = '';
+  emptyOpt.textContent = '\u2014 Presets \u2014';
+  ui.presetSelect.appendChild(emptyOpt);
+
+  const factoryGroup = document.createElement('optgroup');
+  factoryGroup.label = 'Factory';
+  for (const p of presets.filter(p => p.factory)) {
+    const opt = document.createElement('option');
+    opt.value = p.name;
+    opt.textContent = p.name;
+    factoryGroup.appendChild(opt);
+  }
+  ui.presetSelect.appendChild(factoryGroup);
+
+  const userPresets = presets.filter(p => !p.factory);
+  if (userPresets.length) {
+    const userGroup = document.createElement('optgroup');
+    userGroup.label = 'User';
+    for (const p of userPresets) {
+      const opt = document.createElement('option');
+      opt.value = p.name;
+      opt.textContent = p.name;
+      userGroup.appendChild(opt);
+    }
+    ui.presetSelect.appendChild(userGroup);
+  }
+
+  if (selectName) ui.presetSelect.value = selectName;
+}
+
+refreshPresetList();
+
+ui.presetSelect.addEventListener('change', () => {
+  const name = ui.presetSelect.value;
+  if (!name) return;
+  const preset = getAllPresets().find(p => p.name === name);
+  if (preset) applyPreset(preset, ui);
+});
+
+ui.presetSaveBtn.addEventListener('click', () => {
+  const name = prompt('Preset name:');
+  if (!name || !name.trim()) return;
+  const trimmed = name.trim();
+  if (getAllPresets().some(p => p.factory && p.name === trimmed)) {
+    alert('Cannot overwrite a factory preset.');
+    return;
+  }
+  const preset = captureState(ui, trimmed);
+  saveUserPreset(preset);
+  refreshPresetList(trimmed);
+});
+
+ui.presetDeleteBtn.addEventListener('click', () => {
+  const name = ui.presetSelect.value;
+  if (!name) return;
+  const preset = getAllPresets().find(p => p.name === name);
+  if (!preset) return;
+  if (preset.factory) {
+    alert('Cannot delete a factory preset.');
+    return;
+  }
+  if (!confirm(`Delete preset "${name}"?`)) return;
+  deleteUserPreset(name);
+  refreshPresetList();
+});
 
 async function startAudio(deviceId) {
   // Create context on first call

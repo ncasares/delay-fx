@@ -72,6 +72,16 @@ export function buildUI(container) {
   }
   container.appendChild(algoRow);
 
+  // Preset row
+  const presetRow = el('div', 'preset-row');
+  const presetSelect = document.createElement('select');
+  presetSelect.id = 'preset-select';
+  presetSelect.className = 'preset-select';
+  const presetSaveBtn = el('button', 'preset-btn', 'Save');
+  const presetDeleteBtn = el('button', 'preset-btn preset-delete-btn', 'Delete');
+  presetRow.append(presetSelect, presetSaveBtn, presetDeleteBtn);
+  container.appendChild(presetRow);
+
   // Shared parameter sliders
   const paramsSection = el('div', 'params-section');
 
@@ -108,18 +118,27 @@ export function buildUI(container) {
   bypassBtn.dataset.active = 'false';
   container.appendChild(bypassBtn);
 
-  // Level meters
+  // Level meters (retina-aware)
+  const dpr = window.devicePixelRatio || 1;
+  const METER_W = 300;
+  const METER_H = 12;
+
+  function createMeter() {
+    const canvas = document.createElement('canvas');
+    canvas.className = 'meter';
+    canvas.width = METER_W * dpr;
+    canvas.height = METER_H * dpr;
+    canvas.style.width = METER_W + 'px';
+    canvas.style.height = METER_H + 'px';
+    canvas.getContext('2d').scale(dpr, dpr);
+    return canvas;
+  }
+
   const metersSection = el('div', 'meters-section');
   const inputMeterLabel = el('span', 'meter-label', 'IN');
-  const inputCanvas  = document.createElement('canvas');
-  inputCanvas.className = 'meter';
-  inputCanvas.width = 300;
-  inputCanvas.height = 12;
+  const inputCanvas = createMeter();
   const outputMeterLabel = el('span', 'meter-label', 'OUT');
-  const outputCanvas = document.createElement('canvas');
-  outputCanvas.className = 'meter';
-  outputCanvas.width = 300;
-  outputCanvas.height = 12;
+  const outputCanvas = createMeter();
   const inputMeterRow = el('div', 'meter-row');
   inputMeterRow.append(inputMeterLabel, inputCanvas);
   const outputMeterRow = el('div', 'meter-row');
@@ -173,6 +192,9 @@ export function buildUI(container) {
     inputGain: inputGain.input,
     outputGain: outputGain.input,
     bypassBtn,
+    presetSelect,
+    presetSaveBtn,
+    presetDeleteBtn,
     inputCanvas,
     outputCanvas,
     ALGORITHMS,
@@ -243,9 +265,6 @@ export function setupTapTempo(ui, workletNode) {
       ui.time.value = Math.round(clamped);
       ui.time.dispatchEvent(new Event('input'));
     }
-
-    ui.tapBtn.classList.add('pulse');
-    setTimeout(() => ui.tapBtn.classList.remove('pulse'), 100);
   }
 
   ui.tapBtn.addEventListener('click', handleTap);
@@ -260,6 +279,30 @@ export function setupTapTempo(ui, workletNode) {
       ui.bypassBtn.click();
     }
   });
+
+  // Continuous tempo-synced pulse animation
+  let lastPulse = 0;
+  function animatePulse(now) {
+    const delayMs = parseFloat(ui.time.value) || 500;
+    const elapsed = now - lastPulse;
+
+    if (elapsed >= delayMs) {
+      lastPulse = now - (elapsed % delayMs);
+    }
+
+    // Brightness ramps up at beat, then fades out
+    const phase = (now - lastPulse) / delayMs;
+    const glow = Math.max(0, 1 - phase * 3); // fast fade: bright for ~33% of cycle
+    ui.tapBtn.style.borderColor = glow > 0.01
+      ? `rgba(0, 180, 216, ${0.3 + glow * 0.7})`
+      : '#444';
+    ui.tapBtn.style.boxShadow = glow > 0.05
+      ? `0 0 ${4 + glow * 10}px rgba(0, 180, 216, ${glow * 0.5})`
+      : 'none';
+
+    requestAnimationFrame(animatePulse);
+  }
+  requestAnimationFrame(animatePulse);
 }
 
 // --- Level Meters ---
@@ -298,8 +341,10 @@ function rms(buffer) {
 
 function drawMeter(canvas, level, peak) {
   const ctx = canvas.getContext('2d');
-  const w = canvas.width;
-  const h = canvas.height;
+  // Use CSS pixel dimensions (canvas is scaled by dpr)
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.width / dpr;
+  const h = canvas.height / dpr;
 
   ctx.clearRect(0, 0, w, h);
 
