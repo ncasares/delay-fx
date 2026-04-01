@@ -1,15 +1,15 @@
 // ============================================================
-// Delay Workstation — UI: DOM construction, controls, meters
+// Delay Workstation — Pedal-style UI with rotary knobs
 // ============================================================
 
 const ALGORITHMS = {
-  clean:     { name: 'Clean Digital', tweakLabel: 'Tweak: Tone',       tweezLabel: 'Tweez: Spread' },
-  tape:      { name: 'Tape Echo',     tweakLabel: 'Tweak: Saturation', tweezLabel: 'Tweez: Flutter' },
-  analog:    { name: 'Analog BBD',    tweakLabel: 'Tweak: Character',  tweezLabel: 'Tweez: Resonance' },
-  modulated: { name: 'Modulated',     tweakLabel: 'Tweak: Rate',       tweezLabel: 'Tweez: Depth' },
-  reverse:   { name: 'Reverse',       tweakLabel: 'Tweak: Chunk Size', tweezLabel: 'Tweez: Crossfade' },
-  pingpong:  { name: 'Ping Pong',     tweakLabel: 'Tweak: Width',      tweezLabel: 'Tweez: Tone' },
-  ducking:   { name: 'Ducking',       tweakLabel: 'Tweak: Threshold',  tweezLabel: 'Tweez: Release' },
+  clean:     { name: 'Clean Digital', tweakLabel: 'Tone',       tweezLabel: 'Spread' },
+  tape:      { name: 'Tape Echo',     tweakLabel: 'Saturation', tweezLabel: 'Flutter' },
+  analog:    { name: 'Analog BBD',    tweakLabel: 'Character',  tweezLabel: 'Resonance' },
+  modulated: { name: 'Modulated',     tweakLabel: 'Rate',       tweezLabel: 'Depth' },
+  reverse:   { name: 'Reverse',       tweakLabel: 'Chunk Size', tweezLabel: 'Crossfade' },
+  pingpong:  { name: 'Ping Pong',     tweakLabel: 'Width',      tweezLabel: 'Tone' },
+  ducking:   { name: 'Ducking',       tweakLabel: 'Threshold',  tweezLabel: 'Release' },
 };
 
 // --- Helpers ---
@@ -21,21 +21,94 @@ function el(tag, cls, text) {
   return e;
 }
 
-function createSlider(label, min, max, value, step = 1, unit = '') {
-  const wrapper = el('div', 'slider-group');
-  const lbl = el('label', null, label);
+// --- Rotary Knob ---
+// Rotation range: -135deg to +135deg (270deg total)
+const KNOB_MIN_ANGLE = -135;
+const KNOB_MAX_ANGLE = 135;
+
+function createKnob(label, min, max, value, step = 1, unit = '', small = false) {
+  const group = el('div', 'knob-group');
+  const labelEl = el('span', 'knob-label', label);
+
+  const knob = el('div', 'knob' + (small ? ' knob-small' : ''));
+  const indicator = el('div', 'knob-indicator');
+  const valueEl = el('div', 'knob-value', value + unit);
+  knob.append(indicator);
+
+  // Hidden range input for value storage and events
   const input = document.createElement('input');
   input.type = 'range';
   input.min = min;
   input.max = max;
   input.value = value;
   input.step = step;
-  const readout = el('span', 'readout', value + unit);
-  input.addEventListener('input', () => {
-    readout.textContent = input.value + unit;
+  input.style.display = 'none';
+
+  function updateVisual() {
+    const norm = (parseFloat(input.value) - min) / (max - min);
+    const angle = KNOB_MIN_ANGLE + norm * (KNOB_MAX_ANGLE - KNOB_MIN_ANGLE);
+    indicator.style.transform = `translateX(-50%) rotate(${angle}deg)`;
+    valueEl.textContent = input.value + unit;
+  }
+
+  updateVisual();
+  input.addEventListener('input', updateVisual);
+
+  // Mouse/touch drag interaction
+  let dragging = false;
+  let startY = 0;
+  let startValue = 0;
+
+  function onStart(e) {
+    dragging = true;
+    startY = e.clientY ?? e.touches[0].clientY;
+    startValue = parseFloat(input.value);
+    document.body.style.cursor = 'grabbing';
+    e.preventDefault();
+  }
+
+  function onMove(e) {
+    if (!dragging) return;
+    const y = e.clientY ?? e.touches[0].clientY;
+    const delta = startY - y; // up = increase
+    const range = max - min;
+    const sensitivity = range / 150; // 150px for full range
+    const newVal = Math.max(min, Math.min(max, startValue + delta * sensitivity));
+    const stepped = Math.round(newVal / step) * step;
+    if (parseFloat(input.value) !== stepped) {
+      input.value = stepped;
+      input.dispatchEvent(new Event('input'));
+    }
+  }
+
+  function onEnd() {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.cursor = '';
+  }
+
+  knob.addEventListener('mousedown', onStart);
+  knob.addEventListener('touchstart', onStart, { passive: false });
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('touchmove', onMove, { passive: false });
+  document.addEventListener('mouseup', onEnd);
+  document.addEventListener('touchend', onEnd);
+
+  // Double-click to reset to default
+  knob.addEventListener('dblclick', () => {
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
   });
-  wrapper.append(lbl, input, readout);
-  return { wrapper, input, readout, setLabel(t) { lbl.textContent = t; } };
+
+  group.append(labelEl, knob, valueEl, input);
+
+  return {
+    group,
+    input,
+    knob,
+    valueEl,
+    setLabel(t) { labelEl.textContent = t; },
+  };
 }
 
 // --- Build UI ---
@@ -43,24 +116,27 @@ function createSlider(label, min, max, value, step = 1, unit = '') {
 export function buildUI(container) {
   container.innerHTML = '';
 
-  // Header row
+  // Header
   const header = el('div', 'header');
   header.appendChild(el('h1', null, 'Delay Workstation'));
+
+  const headerRight = el('div', 'header-right');
+  headerRight.style.cssText = 'display:flex;gap:0.4rem;align-items:center';
   const deviceSelect = document.createElement('select');
   deviceSelect.id = 'device-select';
   const defaultOpt = document.createElement('option');
   defaultOpt.textContent = 'Default Input';
   defaultOpt.value = '';
   deviceSelect.appendChild(defaultOpt);
-  header.appendChild(deviceSelect);
+
+  const startBtn = el('button', null, 'Start');
+  startBtn.id = 'start-btn';
+  headerRight.append(deviceSelect, startBtn);
+  header.appendChild(headerRight);
   container.appendChild(header);
 
-  // Start button
-  const startBtn = el('button', 'start-btn', 'Start Audio');
-  startBtn.id = 'start-btn';
-  container.appendChild(startBtn);
-
   // Algorithm selector
+  const algoSection = el('div', 'algo-section');
   const algoRow = el('div', 'algo-row');
   const algoBtns = {};
   for (const [id, meta] of Object.entries(ALGORITHMS)) {
@@ -70,7 +146,8 @@ export function buildUI(container) {
     algoRow.appendChild(btn);
     algoBtns[id] = btn;
   }
-  container.appendChild(algoRow);
+  algoSection.appendChild(algoRow);
+  container.appendChild(algoSection);
 
   // Preset row
   const presetRow = el('div', 'preset-row');
@@ -82,26 +159,33 @@ export function buildUI(container) {
   presetRow.append(presetSelect, presetSaveBtn, presetDeleteBtn);
   container.appendChild(presetRow);
 
-  // Shared parameter sliders
-  const paramsSection = el('div', 'params-section');
+  // Main knobs row: TIME, FEEDBACK, TWEAK, TWEEZ, MIX
+  const knobsMain = el('div', 'knobs-main');
 
-  const sharedRow = el('div', 'param-row');
-  const time     = createSlider('Time', 10, 2000, 500, 1, ' ms');
-  const feedback = createSlider('Feedback', 0, 95, 30, 1, '%');
-  const mix      = createSlider('Mix', 0, 100, 50, 1, '%');
-  sharedRow.append(time.wrapper, feedback.wrapper, mix.wrapper);
-  paramsSection.appendChild(sharedRow);
+  const time     = createKnob('Time', 10, 2000, 500, 1, 'ms');
+  const feedback = createKnob('Repeats', 0, 95, 30, 1, '%');
+  const tweak    = createKnob('Tweak', 0, 100, 50, 1, '%');
+  const tweez    = createKnob('Tweez', 0, 100, 50, 1, '%');
+  const mix      = createKnob('Mix', 0, 100, 50, 1, '%');
 
-  const tweakRow = el('div', 'param-row tweak-row');
-  const tweak = createSlider(ALGORITHMS.clean.tweakLabel, 0, 100, 50, 1, '%');
-  const tweez = createSlider(ALGORITHMS.clean.tweezLabel, 0, 100, 50, 1, '%');
-  tweak.wrapper.classList.add('tweak-slider');
-  tweez.wrapper.classList.add('tweez-slider');
-  tweakRow.append(tweak.wrapper, tweez.wrapper);
+  knobsMain.append(time.group, feedback.group, tweak.group, tweez.group, mix.group);
+  container.appendChild(knobsMain);
+
+  // Sync tempo-driven CSS animation to delay time
+  function syncTempoCSS() {
+    const ms = parseFloat(time.input.value) || 500;
+    container.style.setProperty('--tempo-duration', ms + 'ms');
+  }
+  time.input.addEventListener('input', syncTempoCSS);
+  syncTempoCSS();
+
+  // Secondary knobs: INPUT GAIN, OUTPUT GAIN + subdivision
+  const knobsSecondary = el('div', 'knobs-secondary');
+  const inputGain  = createKnob('Input', 0, 200, 100, 1, '%', true);
+  const outputGain = createKnob('Output', 0, 200, 100, 1, '%', true);
 
   // Tap tempo + subdivision
   const tapGroup = el('div', 'tap-group');
-  const tapBtn = el('button', 'tap-btn', 'TAP');
   const subdivSelect = document.createElement('select');
   subdivSelect.className = 'subdiv-select';
   const subdivisions = [
@@ -117,28 +201,29 @@ export function buildUI(container) {
     opt.textContent = s.label;
     subdivSelect.appendChild(opt);
   }
-  tapGroup.append(tapBtn, subdivSelect);
-  tweakRow.appendChild(tapGroup);
-  paramsSection.appendChild(tweakRow);
+  tapGroup.append(el('span', 'knob-label', 'Subdiv'), subdivSelect);
 
-  container.appendChild(paramsSection);
+  knobsSecondary.append(inputGain.group, tapGroup, outputGain.group);
+  container.appendChild(knobsSecondary);
 
-  // Gain sliders
-  const gainRow = el('div', 'param-row gain-row');
-  const inputGain  = createSlider('Input Gain', 0, 200, 100, 1, '%');
-  const outputGain = createSlider('Output Gain', 0, 200, 100, 1, '%');
-  gainRow.append(inputGain.wrapper, outputGain.wrapper);
-  container.appendChild(gainRow);
-
-  // Bypass
-  const bypassBtn = el('button', 'bypass-btn', 'Bypass: OFF');
+  // Footswitches: BYPASS, TAP
+  const footswitchRow = el('div', 'footswitch-row');
+  const bypassBtn = el('button', 'footswitch bypass-btn', 'Bypass');
   bypassBtn.dataset.active = 'false';
-  container.appendChild(bypassBtn);
+  const bypassLed = el('div', 'bypass-led');
+  bypassBtn.appendChild(bypassLed);
 
-  // Level meters (retina-aware)
+  const tapBtn = el('button', 'footswitch tap-btn', 'Tap');
+  const tapLed = el('div', 'tap-led');
+  tapBtn.appendChild(tapLed);
+
+  footswitchRow.append(bypassBtn, tapBtn);
+  container.appendChild(footswitchRow);
+
+  // Meters
   const dpr = window.devicePixelRatio || 1;
   const METER_W = 300;
-  const METER_H = 12;
+  const METER_H = 6;
 
   function createMeter() {
     const canvas = document.createElement('canvas');
@@ -152,20 +237,18 @@ export function buildUI(container) {
   }
 
   const metersSection = el('div', 'meters-section');
-  const inputMeterLabel = el('span', 'meter-label', 'IN');
   const inputCanvas = createMeter();
-  const outputMeterLabel = el('span', 'meter-label', 'OUT');
   const outputCanvas = createMeter();
-  const inputMeterRow = el('div', 'meter-row');
-  inputMeterRow.append(inputMeterLabel, inputCanvas);
-  const outputMeterRow = el('div', 'meter-row');
-  outputMeterRow.append(outputMeterLabel, outputCanvas);
-  metersSection.append(inputMeterRow, outputMeterRow);
+  const inRow = el('div', 'meter-row');
+  inRow.append(el('span', 'meter-label', 'In'), inputCanvas);
+  const outRow = el('div', 'meter-row');
+  outRow.append(el('span', 'meter-label', 'Out'), outputCanvas);
+  metersSection.append(inRow, outRow);
   container.appendChild(metersSection);
 
-  // --- UI-only state (works before audio starts) ---
+  // --- Algorithm switching (works before audio) ---
   let currentAlgo = 'clean';
-  const algoListeners = []; // callbacks registered by connectParams
+  const algoListeners = [];
 
   algoRow.addEventListener('click', (e) => {
     const btn = e.target.closest('.algo-btn');
@@ -177,20 +260,15 @@ export function buildUI(container) {
     btn.classList.add('active');
     currentAlgo = algo;
 
-    // Update Tweak/Tweez labels
-    const meta = ALGORITHMS[algo];
-    tweak.setLabel(meta.tweakLabel);
-    tweez.setLabel(meta.tweezLabel);
-
-    // Notify audio engine if connected
     for (const fn of algoListeners) fn(algo);
   });
 
+  // Bypass
   const bypassListeners = [];
   bypassBtn.addEventListener('click', () => {
     const active = bypassBtn.dataset.active === 'true';
     bypassBtn.dataset.active = active ? 'false' : 'true';
-    bypassBtn.textContent = active ? 'Bypass: OFF' : 'Bypass: ON';
+    bypassBtn.textContent = active ? 'Bypass' : 'Bypass On';
     bypassBtn.classList.toggle('active', !active);
     for (const fn of bypassListeners) fn(!active);
   });
@@ -203,8 +281,8 @@ export function buildUI(container) {
     time: time.input,
     feedback: feedback.input,
     mix: mix.input,
-    tweak,
-    tweez,
+    tweak: { input: tweak.input, setLabel() {} },
+    tweez: { input: tweez.input, setLabel() {} },
     tapBtn,
     subdivSelect,
     inputGain: inputGain.input,
@@ -226,13 +304,13 @@ export function buildUI(container) {
 
 export function connectParams(workletNode, ui) {
   const bindings = [
-    { el: ui.time,       param: 'delayTime',  scale: 1 },
-    { el: ui.feedback,   param: 'feedback',   scale: 1 / 100 * 0.95 },
-    { el: ui.mix,        param: 'mix',        scale: 0.01 },
-    { el: ui.tweak.input, param: 'tweak',     scale: 0.01 },
-    { el: ui.tweez.input, param: 'tweez',     scale: 0.01 },
-    { el: ui.inputGain,  param: 'inputGain',  scale: 0.01 * 2 },
-    { el: ui.outputGain, param: 'outputGain', scale: 0.01 * 2 },
+    { el: ui.time,         param: 'delayTime',  scale: 1 },
+    { el: ui.feedback,     param: 'feedback',    scale: 1 / 100 * 0.95 },
+    { el: ui.mix,          param: 'mix',         scale: 0.01 },
+    { el: ui.tweak.input,  param: 'tweak',       scale: 0.01 },
+    { el: ui.tweez.input,  param: 'tweez',       scale: 0.01 },
+    { el: ui.inputGain,    param: 'inputGain',   scale: 0.01 * 2 },
+    { el: ui.outputGain,   param: 'outputGain',  scale: 0.01 * 2 },
   ];
 
   for (const b of bindings) {
@@ -243,13 +321,11 @@ export function connectParams(workletNode, ui) {
     });
   }
 
-  // Wire algorithm switching to worklet
   workletNode.port.postMessage({ type: 'setAlgorithm', value: ui.currentAlgo });
   ui.onAlgoChange((algo) => {
     workletNode.port.postMessage({ type: 'setAlgorithm', value: algo });
   });
 
-  // Wire bypass to worklet
   ui.onBypassChange((active) => {
     workletNode.port.postMessage({ type: 'setBypass', value: active });
   });
@@ -261,7 +337,6 @@ export function setupTapTempo(ui, workletNode) {
   const tapTimes = [];
   const MAX_TAPS = 4;
   const TIMEOUT = 2000;
-
   let lastTappedMs = null;
 
   function applySubdivision() {
@@ -274,11 +349,9 @@ export function setupTapTempo(ui, workletNode) {
 
   function handleTap() {
     const now = performance.now();
-
     if (tapTimes.length && (now - tapTimes[tapTimes.length - 1]) > TIMEOUT) {
       tapTimes.length = 0;
     }
-
     tapTimes.push(now);
     if (tapTimes.length > MAX_TAPS) tapTimes.shift();
 
@@ -306,25 +379,26 @@ export function setupTapTempo(ui, workletNode) {
     }
   });
 
-  // Continuous tempo-synced pulse animation
+  // Tempo-synced pulse on TAP button LED
   let lastPulse = 0;
   function animatePulse(now) {
     const delayMs = parseFloat(ui.time.value) || 500;
     const elapsed = now - lastPulse;
-
     if (elapsed >= delayMs) {
       lastPulse = now - (elapsed % delayMs);
     }
-
-    // Brightness ramps up at beat, then fades out
     const phase = (now - lastPulse) / delayMs;
-    const glow = Math.max(0, 1 - phase * 3); // fast fade: bright for ~33% of cycle
-    ui.tapBtn.style.borderColor = glow > 0.01
-      ? `rgba(0, 180, 216, ${0.3 + glow * 0.7})`
+    const glow = Math.max(0, 1 - phase * 3);
+
+    const led = ui.tapBtn.querySelector('.tap-led');
+    if (led) {
+      const on = glow > 0.05;
+      led.style.background = on ? `rgba(100, 220, 100, ${0.3 + glow * 0.7})` : '#333';
+      led.style.boxShadow = on ? `0 0 ${4 + glow * 8}px rgba(100, 220, 100, ${glow * 0.6})` : 'none';
+    }
+    ui.tapBtn.style.borderColor = glow > 0.05
+      ? `rgba(100, 180, 100, ${0.2 + glow * 0.3})`
       : '#444';
-    ui.tapBtn.style.boxShadow = glow > 0.05
-      ? `0 0 ${4 + glow * 10}px rgba(0, 180, 216, ${glow * 0.5})`
-      : 'none';
 
     requestAnimationFrame(animatePulse);
   }
@@ -353,37 +427,32 @@ export function startMeters(ui, inputAnalyser, outputAnalyser) {
 
     requestAnimationFrame(draw);
   }
-
   draw();
 }
 
 function rms(buffer) {
   let sum = 0;
-  for (let i = 0; i < buffer.length; i++) {
-    sum += buffer[i] * buffer[i];
-  }
+  for (let i = 0; i < buffer.length; i++) sum += buffer[i] * buffer[i];
   return Math.sqrt(sum / buffer.length);
 }
 
 function drawMeter(canvas, level, peak) {
   const ctx = canvas.getContext('2d');
-  // Use CSS pixel dimensions (canvas is scaled by dpr)
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.width / dpr;
   const h = canvas.height / dpr;
 
   ctx.clearRect(0, 0, w, h);
-
-  ctx.fillStyle = '#2a2a2a';
+  ctx.fillStyle = '#1a261a';
   ctx.fillRect(0, 0, w, h);
 
   const barW = Math.min(1, level * 5) * w;
   const ratio = barW / w;
-  ctx.fillStyle = ratio < 0.6 ? '#00b4d8' : ratio < 0.85 ? '#f0c040' : '#e04040';
+  ctx.fillStyle = ratio < 0.6 ? '#4a8a4a' : ratio < 0.85 ? '#8a8a3a' : '#8a3a3a';
   ctx.fillRect(0, 0, barW, h);
 
   const peakX = Math.min(1, peak * 5) * w;
-  ctx.fillStyle = '#fff';
+  ctx.fillStyle = '#8ab88a';
   ctx.fillRect(peakX - 1, 0, 2, h);
 }
 
