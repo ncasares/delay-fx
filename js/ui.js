@@ -1,5 +1,5 @@
 // ============================================================
-// Delay Workstation — Pedal-style UI with rotary knobs
+// DELAYSTATION — Pedal-style UI with rotary knobs
 // ============================================================
 
 const ALGORITHMS = {
@@ -118,7 +118,7 @@ export function buildUI(container) {
 
   // Header
   const header = el('div', 'header');
-  header.appendChild(el('h1', null, 'Delay Workstation'));
+  header.appendChild(el('h1', null, 'DELAYSTATION'));
 
   const headerRight = el('div', 'header-right');
   headerRight.style.cssText = 'display:flex;gap:0.4rem;align-items:center';
@@ -220,6 +220,48 @@ export function buildUI(container) {
   footswitchRow.append(bypassBtn, tapBtn);
   container.appendChild(footswitchRow);
 
+  // --- Looper Section ---
+  const looperSection = el('div', 'looper-section');
+
+  const looperHeader = el('div', 'looper-header');
+  looperHeader.appendChild(el('span', 'looper-title', 'Looper'));
+  const looperTime = el('span', 'looper-time', '0:00 / 2:00');
+  looperHeader.appendChild(looperTime);
+  looperSection.appendChild(looperHeader);
+
+  const looperFootRow = el('div', 'looper-foot-row');
+
+  const looperRecBtn = el('button', 'footswitch looper-rec-btn', 'Record');
+  const looperRecLed = el('div', 'looper-led looper-rec-led');
+  looperRecBtn.appendChild(looperRecLed);
+
+  const looperPlayBtn = el('button', 'footswitch looper-play-btn', 'Play');
+  const looperPlayLed = el('div', 'looper-led looper-play-led');
+  looperPlayBtn.appendChild(looperPlayLed);
+
+  const looperClearBtn = el('button', 'footswitch looper-clear-btn', 'Clear');
+
+  looperFootRow.append(looperRecBtn, looperPlayBtn, looperClearBtn);
+  looperSection.appendChild(looperFootRow);
+
+  // Secondary looper controls
+  const looperSecondary = el('div', 'looper-secondary');
+  const looperUndoBtn = el('button', 'looper-mode-btn', 'Undo');
+  looperUndoBtn.disabled = true;
+  const looperHalfBtn = el('button', 'looper-mode-btn', '½ Speed');
+  const looperRevBtn = el('button', 'looper-mode-btn', 'Reverse');
+  const looperOnceBtn = el('button', 'looper-mode-btn', 'Once');
+  looperSecondary.append(looperUndoBtn, looperHalfBtn, looperRevBtn, looperOnceBtn);
+  looperSection.appendChild(looperSecondary);
+
+  // Loop position bar
+  const looperPosWrap = el('div', 'looper-pos-wrap');
+  const looperPosBar = el('div', 'looper-pos-bar');
+  looperPosWrap.appendChild(looperPosBar);
+  looperSection.appendChild(looperPosWrap);
+
+  container.appendChild(looperSection);
+
   // Meters
   const dpr = window.devicePixelRatio || 1;
   const METER_W = 300;
@@ -291,6 +333,17 @@ export function buildUI(container) {
     presetSelect,
     presetSaveBtn,
     presetDeleteBtn,
+    looperRecBtn,
+    looperPlayBtn,
+    looperClearBtn,
+    looperUndoBtn,
+    looperHalfBtn,
+    looperRevBtn,
+    looperOnceBtn,
+    looperRecLed,
+    looperPlayLed,
+    looperPosBar,
+    looperTime,
     inputCanvas,
     outputCanvas,
     ALGORITHMS,
@@ -377,6 +430,10 @@ export function setupTapTempo(ui, workletNode) {
     if (e.code === 'KeyB') {
       ui.bypassBtn.click();
     }
+    if (e.code === 'KeyR') { ui.looperRecBtn.click(); }
+    if (e.code === 'KeyP') { ui.looperPlayBtn.click(); }
+    if (e.code === 'KeyC') { ui.looperClearBtn.click(); }
+    if (e.code === 'KeyU') { ui.looperUndoBtn.click(); }
   });
 
   // Tempo-synced pulse on TAP button LED
@@ -472,4 +529,125 @@ export async function populateDevices(ui) {
   } catch (err) {
     console.warn('Could not enumerate devices:', err);
   }
+}
+
+// --- Looper UI Updates ---
+
+export function updateLooperState(ui, data) {
+  const { state, loopLength, playhead, recordHead, maxLength, sampleRate: sr, hasUndo, halfSpeed, reverse } = data;
+
+  // LED states
+  const recLed = ui.looperRecLed;
+  const playLed = ui.looperPlayLed;
+
+  // Reset
+  recLed.className = 'looper-led looper-rec-led';
+  playLed.className = 'looper-led looper-play-led';
+
+  if (state === 'recording') {
+    recLed.classList.add('recording');
+    ui.looperRecBtn.textContent = 'Stop';
+    ui.looperRecBtn.appendChild(recLed);
+  } else if (state === 'overdubbing') {
+    recLed.classList.add('overdubbing');
+    playLed.classList.add('playing');
+    ui.looperRecBtn.textContent = 'Stop Dub';
+    ui.looperRecBtn.appendChild(recLed);
+    ui.looperPlayBtn.textContent = 'Stop';
+    ui.looperPlayBtn.appendChild(playLed);
+  } else if (state === 'playing') {
+    playLed.classList.add('playing');
+    ui.looperRecBtn.textContent = 'Overdub';
+    ui.looperRecBtn.appendChild(recLed);
+    ui.looperPlayBtn.textContent = 'Stop';
+    ui.looperPlayBtn.appendChild(playLed);
+  } else if (state === 'stopped') {
+    playLed.classList.add('stopped');
+    ui.looperRecBtn.textContent = 'Overdub';
+    ui.looperRecBtn.appendChild(recLed);
+    ui.looperPlayBtn.textContent = 'Play';
+    ui.looperPlayBtn.appendChild(playLed);
+  } else {
+    ui.looperRecBtn.textContent = 'Record';
+    ui.looperRecBtn.appendChild(recLed);
+    ui.looperPlayBtn.textContent = 'Play';
+    ui.looperPlayBtn.appendChild(playLed);
+  }
+
+  // Undo button
+  ui.looperUndoBtn.disabled = !hasUndo;
+
+  // Mode buttons active state
+  ui.looperHalfBtn.classList.toggle('active', halfSpeed);
+  ui.looperRevBtn.classList.toggle('active', reverse);
+
+  // Time display
+  if (sr && sr > 0) {
+    const currentSec = state === 'recording'
+      ? loopLength / sr  // during recording, loopLength isn't set yet
+      : (loopLength > 0 ? playhead / sr : 0);
+    const totalSec = state === 'recording'
+      ? maxLength / sr
+      : (loopLength > 0 ? loopLength / sr : maxLength / sr);
+
+    const fmt = (s) => {
+      const m = Math.floor(s / 60);
+      const sec = Math.floor(s % 60);
+      return `${m}:${sec.toString().padStart(2, '0')}`;
+    };
+
+    if (state === 'recording') {
+      ui.looperTime.textContent = `REC ${fmt(recordHead / sr)} / ${fmt(maxLength / sr)}`;
+    } else {
+      ui.looperTime.textContent = `${fmt(currentSec)} / ${fmt(totalSec)}`;
+    }
+  }
+
+  // Position bar
+  if (loopLength > 0 && (state === 'playing' || state === 'overdubbing')) {
+    const pct = (playhead / loopLength) * 100;
+    ui.looperPosBar.style.width = Math.min(100, Math.max(0, pct)) + '%';
+  } else if (state === 'recording' && maxLength > 0) {
+    const pct = (recordHead / maxLength) * 100;
+    ui.looperPosBar.style.width = Math.min(100, pct) + '%';
+    ui.looperPosBar.style.background = 'linear-gradient(90deg, #c44, #e66)';
+  } else {
+    ui.looperPosBar.style.width = '0%';
+    ui.looperPosBar.style.background = '';
+  }
+}
+
+export function connectLooper(workletNode, ui) {
+  // Allocate loop buffers
+  workletNode.port.postMessage({ type: 'looperAllocate' });
+
+  // Wire footswitch buttons
+  ui.looperRecBtn.addEventListener('click', () => {
+    workletNode.port.postMessage({ type: 'looperRecord' });
+  });
+  ui.looperPlayBtn.addEventListener('click', () => {
+    workletNode.port.postMessage({ type: 'looperPlayStop' });
+  });
+  ui.looperClearBtn.addEventListener('click', () => {
+    workletNode.port.postMessage({ type: 'looperClear' });
+  });
+  ui.looperUndoBtn.addEventListener('click', () => {
+    workletNode.port.postMessage({ type: 'looperUndo' });
+  });
+  ui.looperHalfBtn.addEventListener('click', () => {
+    workletNode.port.postMessage({ type: 'looperHalfSpeed' });
+  });
+  ui.looperRevBtn.addEventListener('click', () => {
+    workletNode.port.postMessage({ type: 'looperReverse' });
+  });
+  ui.looperOnceBtn.addEventListener('click', () => {
+    workletNode.port.postMessage({ type: 'looperPlayOnce' });
+  });
+
+  // Listen for state updates from worklet
+  workletNode.port.onmessage = (e) => {
+    if (e.data.type === 'looperState') {
+      updateLooperState(ui, e.data);
+    }
+  };
 }

@@ -2,7 +2,7 @@
 // Delay Workstation — Main: audio graph setup and UI wiring
 // ============================================================
 
-import { buildUI, connectParams, setupTapTempo, startMeters, populateDevices } from './ui.js';
+import { buildUI, connectParams, setupTapTempo, startMeters, populateDevices, connectLooper } from './ui.js';
 import { getAllPresets, captureState, applyPreset, saveUserPreset, deleteUserPreset } from './presets.js';
 import { setupMIDI } from './midi.js';
 
@@ -149,6 +149,7 @@ async function startAudio(deviceId) {
     connectParams(workletNode, ui);
     setupTapTempo(ui, workletNode);
     startMeters(ui, inputAnalyser, outputAnalyser);
+    connectLooper(workletNode, ui);
   }
 
   // Connect source through input analyser to worklet

@@ -205,6 +205,24 @@ class DelayProcessor extends AudioWorkletProcessor {
     this.crossfadeLen = 0;
     this.prevAlgorithm = 'clean';
 
+    // --- Looper ---
+    this.loopState = 'empty'; // empty, recording, playing, overdubbing, stopped
+    this.loopBuffer = null;   // lazy allocation
+    this.undoBuffer = null;
+    this.loopLength = 0;
+    this.loopPlayhead = 0;
+    this.loopRecordHead = 0;
+    this.loopFadeGain = 0.95;
+    this.loopPlaybackRate = 1.0;
+    this.loopDirection = 1;
+    this.loopOneShot = false;
+    this.loopHalfSpeed = false;
+    this.loopReverse = false;
+    this.loopHasUndo = false;
+    this.maxLoopSamples = Math.ceil(sr * 120);
+    this._loopStateCounter = 0;
+    this._loopStateInterval = Math.floor(sr * 0.05); // ~50ms
+
     this.port.onmessage = (e) => this.handleMessage(e.data);
   }
 
@@ -215,11 +233,137 @@ class DelayProcessor extends AudioWorkletProcessor {
         this.algorithm = data.value;
         this.crossfading = true;
         this.crossfadePos = 0;
-        this.crossfadeLen = Math.floor(sampleRate * 0.05); // 50ms
+        this.crossfadeLen = Math.floor(sampleRate * 0.05);
       }
     } else if (data.type === 'setBypass') {
       this.bypass = data.value;
+    } else if (data.type === 'looperAllocate') {
+      if (!this.loopBuffer) {
+        this.loopBuffer = new Float32Array(this.maxLoopSamples);
+        this.undoBuffer = new Float32Array(this.maxLoopSamples);
+      }
+    } else if (data.type === 'looperRecord') {
+      this._looperToggleRecord();
+    } else if (data.type === 'looperPlayStop') {
+      this._looperTogglePlayStop();
+    } else if (data.type === 'looperClear') {
+      this._looperClear();
+    } else if (data.type === 'looperUndo') {
+      this._looperUndo();
+    } else if (data.type === 'looperHalfSpeed') {
+      this.loopHalfSpeed = !this.loopHalfSpeed;
+      this.loopPlaybackRate = this.loopHalfSpeed ? 0.5 : 1.0;
+    } else if (data.type === 'looperReverse') {
+      this.loopReverse = !this.loopReverse;
+      this.loopDirection = this.loopReverse ? -1 : 1;
+    } else if (data.type === 'looperPlayOnce') {
+      if (this.loopLength > 0 && this.loopState !== 'recording') {
+        this.loopOneShot = true;
+        this.loopPlayhead = 0;
+        this.loopState = 'playing';
+        this._sendLoopState();
+      }
     }
+  }
+
+  _looperToggleRecord() {
+    if (!this.loopBuffer) return;
+    if (this.loopState === 'empty') {
+      this.loopRecordHead = 0;
+      this.loopState = 'recording';
+    } else if (this.loopState === 'recording') {
+      this.loopLength = this.loopRecordHead;
+      this.loopPlayhead = 0;
+      this.loopState = this.loopLength > 0 ? 'playing' : 'empty';
+    } else if (this.loopState === 'playing' || this.loopState === 'stopped') {
+      // Enter overdub — snapshot for undo
+      this.undoBuffer.set(this.loopBuffer.subarray(0, this.loopLength));
+      this.loopHasUndo = true;
+      if (this.loopState === 'stopped') this.loopPlayhead = 0;
+      this.loopState = 'overdubbing';
+    } else if (this.loopState === 'overdubbing') {
+      this.loopState = 'playing';
+    }
+    this._sendLoopState();
+  }
+
+  _looperTogglePlayStop() {
+    if (this.loopLength === 0) return;
+    if (this.loopState === 'playing' || this.loopState === 'overdubbing') {
+      this.loopState = 'stopped';
+      this.loopOneShot = false;
+    } else if (this.loopState === 'stopped') {
+      this.loopPlayhead = 0;
+      this.loopState = 'playing';
+    }
+    this._sendLoopState();
+  }
+
+  _looperClear() {
+    this.loopState = 'empty';
+    this.loopLength = 0;
+    this.loopPlayhead = 0;
+    this.loopRecordHead = 0;
+    this.loopHasUndo = false;
+    this.loopOneShot = false;
+    this.loopHalfSpeed = false;
+    this.loopReverse = false;
+    this.loopPlaybackRate = 1.0;
+    this.loopDirection = 1;
+    this._sendLoopState();
+  }
+
+  _looperUndo() {
+    if (!this.loopHasUndo || this.loopLength === 0) return;
+    // Swap buffers
+    const tmp = this.loopBuffer;
+    this.loopBuffer = this.undoBuffer;
+    this.undoBuffer = tmp;
+    if (this.loopState === 'overdubbing') this.loopState = 'playing';
+    this._sendLoopState();
+  }
+
+  _readLoop(pos) {
+    // Hermite interpolation for fractional positions (half-speed)
+    const len = this.loopLength;
+    const i = Math.floor(pos);
+    const frac = pos - i;
+    if (frac < 0.0001) return this.loopBuffer[((i % len) + len) % len];
+    const wrap = (idx) => ((idx % len) + len) % len;
+    const y0 = this.loopBuffer[wrap(i - 1)];
+    const y1 = this.loopBuffer[wrap(i)];
+    const y2 = this.loopBuffer[wrap(i + 1)];
+    const y3 = this.loopBuffer[wrap(i + 2)];
+    return hermiteInterpolate(y0, y1, y2, y3, frac);
+  }
+
+  _wrapLoopPlayhead() {
+    if (this.loopPlayhead >= this.loopLength) {
+      if (this.loopOneShot) {
+        this.loopState = 'stopped';
+        this.loopOneShot = false;
+        this._sendLoopState();
+      }
+      this.loopPlayhead -= this.loopLength;
+    }
+    if (this.loopPlayhead < 0) {
+      this.loopPlayhead += this.loopLength;
+    }
+  }
+
+  _sendLoopState() {
+    this.port.postMessage({
+      type: 'looperState',
+      state: this.loopState,
+      loopLength: this.loopState === 'recording' ? this.loopRecordHead : this.loopLength,
+      playhead: this.loopPlayhead,
+      recordHead: this.loopRecordHead,
+      maxLength: this.maxLoopSamples,
+      sampleRate: sampleRate,
+      hasUndo: this.loopHasUndo,
+      halfSpeed: this.loopHalfSpeed,
+      reverse: this.loopReverse,
+    });
   }
 
   process(inputs, outputs, parameters) {
@@ -290,11 +434,46 @@ class DelayProcessor extends AudioWorkletProcessor {
       // Mix dry/wet
       const dry = 1 - mix;
       const effectiveWetMix = mix * (1 - this.bypassGain);
-      const mL = (dry * sample + effectiveWetMix * wetL) * outputGain;
-      const mR = (dry * sample + effectiveWetMix * wetR) * outputGain;
+      const mL = dry * sample + effectiveWetMix * wetL;
+      const mR = dry * sample + effectiveWetMix * wetR;
 
-      outL[i] = isFinite(mL) ? mL : 0;
-      outR[i] = isFinite(mR) ? mR : 0;
+      // --- Looper ---
+      let loopOut = 0;
+      if (this.loopBuffer) {
+        if (this.loopState === 'recording') {
+          this.loopBuffer[this.loopRecordHead] = mL;
+          this.loopRecordHead++;
+          if (this.loopRecordHead >= this.maxLoopSamples) {
+            this.loopLength = this.loopRecordHead;
+            this.loopPlayhead = 0;
+            this.loopState = 'playing';
+            this._sendLoopState();
+          }
+        } else if (this.loopState === 'playing') {
+          loopOut = this._readLoop(this.loopPlayhead);
+          this.loopPlayhead += this.loopPlaybackRate * this.loopDirection;
+          this._wrapLoopPlayhead();
+        } else if (this.loopState === 'overdubbing') {
+          loopOut = this._readLoop(this.loopPlayhead);
+          const idx = ((Math.floor(this.loopPlayhead) % this.loopLength) + this.loopLength) % this.loopLength;
+          this.loopBuffer[idx] = this.loopBuffer[idx] * this.loopFadeGain + mL;
+          this.loopPlayhead += this.loopPlaybackRate * this.loopDirection;
+          this._wrapLoopPlayhead();
+        }
+
+        // Throttled state reporting
+        this._loopStateCounter++;
+        if (this._loopStateCounter >= this._loopStateInterval) {
+          this._loopStateCounter = 0;
+          this._sendLoopState();
+        }
+      }
+
+      const finalL = (mL + loopOut) * outputGain;
+      const finalR = (mR + loopOut) * outputGain;
+
+      outL[i] = isFinite(finalL) ? finalL : 0;
+      outR[i] = isFinite(finalR) ? finalR : 0;
 
       this.writePos = (this.writePos + 1) & this.mask;
     }
