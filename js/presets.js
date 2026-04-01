@@ -67,6 +67,65 @@ export function captureState(ui, name) {
   };
 }
 
+export function exportPresets() {
+  const presets = getUserPresets();
+  if (presets.length === 0) return null;
+  const blob = new Blob(
+    [JSON.stringify({ version: 1, presets }, null, 2)],
+    { type: 'application/json' }
+  );
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'delaystation-presets.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export function importPresets(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        let incoming = [];
+        if (Array.isArray(data)) {
+          incoming = data;
+        } else if (data.presets && Array.isArray(data.presets)) {
+          incoming = data.presets;
+        } else {
+          reject(new Error('Invalid preset file format'));
+          return;
+        }
+        // Validate and strip factory flag
+        const valid = incoming
+          .filter(p => p.name && p.algorithm && p.params)
+          .map(({ name, algorithm, params }) => ({ name, algorithm, params }));
+        if (valid.length === 0) {
+          reject(new Error('No valid presets found in file'));
+          return;
+        }
+        // Merge: imported presets overwrite existing with same name
+        const existing = getUserPresets();
+        for (const p of valid) {
+          const idx = existing.findIndex(e => e.name === p.name);
+          if (idx >= 0) {
+            existing[idx] = p;
+          } else {
+            existing.push(p);
+          }
+        }
+        setUserPresets(existing);
+        resolve(valid.length);
+      } catch (err) {
+        reject(new Error('Failed to parse preset file'));
+      }
+    };
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsText(file);
+  });
+}
+
 export function applyPreset(preset, ui) {
   // Switch algorithm first (updates tweak/tweez labels)
   if (preset.algorithm !== ui.currentAlgo) {

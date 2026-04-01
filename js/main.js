@@ -3,7 +3,7 @@
 // ============================================================
 
 import { buildUI, connectParams, setupTapTempo, startMeters, populateDevices, connectLooper } from './ui.js';
-import { getAllPresets, captureState, applyPreset, saveUserPreset, deleteUserPreset } from './presets.js';
+import { getAllPresets, captureState, applyPreset, saveUserPreset, deleteUserPreset, exportPresets, importPresets } from './presets.js';
 import { setupMIDI } from './midi.js';
 
 let audioCtx = null;
@@ -86,6 +86,23 @@ ui.presetDeleteBtn.addEventListener('click', () => {
   if (!confirm(`Delete preset "${name}"?`)) return;
   deleteUserPreset(name);
   refreshPresetList();
+});
+
+ui.presetExportBtn.addEventListener('click', () => {
+  exportPresets();
+});
+
+ui.presetImportInput.addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const count = await importPresets(file);
+    refreshPresetList();
+    alert(`Imported ${count} preset${count !== 1 ? 's' : ''}.`);
+  } catch (err) {
+    alert(err.message);
+  }
+  e.target.value = '';
 });
 
 // --- MIDI ---

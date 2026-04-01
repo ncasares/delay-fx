@@ -156,7 +156,14 @@ export function buildUI(container) {
   presetSelect.className = 'preset-select';
   const presetSaveBtn = el('button', 'preset-btn', 'Save');
   const presetDeleteBtn = el('button', 'preset-btn preset-delete-btn', 'Delete');
-  presetRow.append(presetSelect, presetSaveBtn, presetDeleteBtn);
+  const presetExportBtn = el('button', 'preset-btn', 'Export');
+  const presetImportBtn = el('button', 'preset-btn', 'Import');
+  const presetImportInput = document.createElement('input');
+  presetImportInput.type = 'file';
+  presetImportInput.accept = '.json';
+  presetImportInput.style.display = 'none';
+  presetImportBtn.addEventListener('click', () => presetImportInput.click());
+  presetRow.append(presetSelect, presetSaveBtn, presetDeleteBtn, presetExportBtn, presetImportBtn, presetImportInput);
   container.appendChild(presetRow);
 
   // Main knobs row: TIME, FEEDBACK, TWEAK, TWEEZ, MIX
@@ -333,6 +340,8 @@ export function buildUI(container) {
     presetSelect,
     presetSaveBtn,
     presetDeleteBtn,
+    presetExportBtn,
+    presetImportInput,
     looperRecBtn,
     looperPlayBtn,
     looperClearBtn,
