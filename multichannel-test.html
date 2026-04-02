@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Multi-Channel Audio Test</title>
+  <style>
+    body { font-family: monospace; background: #111; color: #ccc; padding: 2rem; }
+    button { padding: 0.5rem 1rem; margin: 0.5rem; font-size: 1rem; cursor: pointer; }
+    pre { background: #1a1a1a; padding: 1rem; border-radius: 4px; overflow-x: auto; }
+    .pass { color: #4a4; } .fail { color: #e44; } .info { color: #4ae; }
+    h2 { color: #8ab88a; margin-top: 2rem; }
+  </style>
+</head>
+<body>
+  <h1>Multi-Channel Audio Diagnostic</h1>
+  <p>Use this page to test multi-channel routing with your audio interface.</p>
+
+  <h2>Step 1: Enumerate Devices</h2>
+  <button id="btn-enum">List Audio Devices</button>
+  <pre id="log-enum">Click to enumerate...</pre>
+
+  <h2>Step 2: Request Multi-Channel Input</h2>
+  <label>Device: <select id="device-select"><option value="">Default</option></select></label>
+  <label>Channels: <input id="ch-count" type="number" value="6" min="1" max="32" style="width:3rem"></label>
+  <button id="btn-stream">Request Stream</button>
+  <pre id="log-stream">Click to request...</pre>
+
+  <h2>Step 3: Check Output Capabilities</h2>
+  <pre id="log-output">Will populate after stream is requested...</pre>
+
+  <h2>Step 4: Channel Pass-Through Test</h2>
+  <p>Route a specific input channel to a specific output channel pair.</p>
+  <label>Input Ch (0-indexed): <input id="in-ch" type="number" value="2" min="0" max="31" style="width:3rem"></label>
+  <label>Output L Ch: <input id="out-l" type="number" value="4" min="0" max="31" style="width:3rem"></label>
+  <label>Output R Ch: <input id="out-r" type="number" value="5" min="0" max="31" style="width:3rem"></label>
+  <button id="btn-route">Start Routing</button>
+  <button id="btn-stop" disabled>Stop</button>
+  <pre id="log-route">Configure channels and click Start...</pre>
+
+  <h2>Channel Level Meters</h2>
+  <pre id="log-meters">Waiting for stream...</pre>
+
+  <script>
+    let audioCtx = null;
+    let stream = null;
+    let sourceNode = null;
+    let splitter = null;
+    let routingNodes = [];
+
+    function log(id, text, cls) {
+      const el = document.getElementById(id);
+      const span = document.createElement('span');
+      if (cls) span.className = cls;
+      span.textContent = text + '\n';
+      el.appendChild(span);
+    }
+
+    function clearLog(id) {
+      document.getElementById(id).textContent = '';
+    }
+
+    // Step 1: Enumerate
+    document.getElementById('btn-enum').addEventListener('click', async () => {
+      clearLog('log-enum');
+      try {
+        // Need getUserMedia first for labels
+        const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        tempStream.getTracks().forEach(t => t.stop());
+
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const inputs = devices.filter(d => d.kind === 'audioinput');
+        const outputs = devices.filter(d => d.kind === 'audiooutput');
+
+        log('log-enum', `Found ${inputs.length} input(s), ${outputs.length} output(s)`, 'info');
+        log('log-enum', '');
+        log('log-enum', '--- INPUTS ---');
+        const sel = document.getElementById('device-select');
+        sel.innerHTML = '<option value="">Default</option>';
+        for (const d of inputs) {
+          log('log-enum', `  ${d.label || 'Unknown'}`);
+          log('log-enum', `    deviceId: ${d.deviceId.substring(0, 20)}...`);
+          const opt = document.createElement('option');
+          opt.value = d.deviceId;
+          opt.textContent = d.label || d.deviceId.substring(0, 30);
+          sel.appendChild(opt);
+        }
+        log('log-enum', '');
+        log('log-enum', '--- OUTPUTS ---');
+        for (const d of outputs) {
+          log('log-enum', `  ${d.label || 'Unknown'}`);
+        }
+      } catch (err) {
+        log('log-enum', 'Error: ' + err.message, 'fail');
+      }
+    });
+
+    // Step 2: Request stream
+    document.getElementById('btn-stream').addEventListener('click', async () => {
+      clearLog('log-stream');
+      clearLog('log-output');
+
+      const deviceId = document.getElementById('device-select').value;
+      const chCount = parseInt(document.getElementById('ch-count').value) || 2;
+
+      const constraints = {
+        audio: {
+          channelCount: { ideal: chCount, min: 1 },
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        }
+      };
+      if (deviceId) constraints.audio.deviceId = { exact: deviceId };
+
+      log('log-stream', `Requesting ${chCount} channels...`, 'info');
+      log('log-stream', `Constraints: ${JSON.stringify(constraints.audio, null, 2)}`);
+
+      try {
+        if (stream) stream.getTracks().forEach(t => t.stop());
+
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        const track = stream.getAudioTracks()[0];
+        const settings = track.getSettings();
+
+        log('log-stream', '', '');
+        log('log-stream', `Track label: ${track.label}`, 'info');
+        log('log-stream', `Track settings:`, 'info');
+        log('log-stream', JSON.stringify(settings, null, 2));
+        log('log-stream', '');
+
+        const grantedCh = settings.channelCount || 'unknown';
+        if (grantedCh >= chCount) {
+          log('log-stream', `✓ Got ${grantedCh} channels (requested ${chCount})`, 'pass');
+        } else {
+          log('log-stream', `✗ Only got ${grantedCh} channels (requested ${chCount})`, 'fail');
+        }
+
+        // Create audio context
+        if (!audioCtx) audioCtx = new AudioContext();
+        sourceNode = audioCtx.createMediaStreamSource(stream);
+
+        log('log-stream', `Source channelCount: ${sourceNode.channelCount}`, 'info');
+        log('log-stream', `Source channelCountMode: ${sourceNode.channelCountMode}`, 'info');
+
+        // Step 3: Output info
+        const dest = audioCtx.destination;
+        log('log-output', `AudioContext sampleRate: ${audioCtx.sampleRate}`, 'info');
+        log('log-output', `destination.maxChannelCount: ${dest.maxChannelCount}`, 'info');
+        log('log-output', `destination.channelCount: ${dest.channelCount}`, 'info');
+
+        if (dest.maxChannelCount > 2) {
+          log('log-output', `✓ Multi-channel output supported (${dest.maxChannelCount} channels)`, 'pass');
+          log('log-output', '');
+          log('log-output', 'Setting destination to max channels...', 'info');
+          dest.channelCount = dest.maxChannelCount;
+          dest.channelCountMode = 'explicit';
+          log('log-output', `destination.channelCount now: ${dest.channelCount}`, 'pass');
+        } else {
+          log('log-output', `✗ Only stereo output available`, 'fail');
+        }
+
+        // Start metering
+        startMetering();
+
+      } catch (err) {
+        log('log-stream', 'Error: ' + err.message, 'fail');
+      }
+    });
+
+    // Step 4: Routing
+    document.getElementById('btn-route').addEventListener('click', () => {
+      clearLog('log-route');
+      if (!audioCtx || !sourceNode) {
+        log('log-route', 'Request a stream first (Step 2)', 'fail');
+        return;
+      }
+
+      const inCh = parseInt(document.getElementById('in-ch').value);
+      const outL = parseInt(document.getElementById('out-l').value);
+      const outR = parseInt(document.getElementById('out-r').value);
+      const srcCh = sourceNode.channelCount;
+      const destCh = audioCtx.destination.channelCount;
+
+      log('log-route', `Routing: input ch ${inCh} → output ch ${outL}(L), ${outR}(R)`, 'info');
+      log('log-route', `Source has ${srcCh} channels, destination has ${destCh} channels`);
+
+      if (inCh >= srcCh) {
+        log('log-route', `✗ Input channel ${inCh} out of range (source has ${srcCh})`, 'fail');
+        return;
+      }
+      if (outL >= destCh || outR >= destCh) {
+        log('log-route', `✗ Output channel out of range (destination has ${destCh})`, 'fail');
+        return;
+      }
+
+      // Clean up previous routing
+      routingNodes.forEach(n => { try { n.disconnect(); } catch {} });
+      routingNodes = [];
+
+      try {
+        const split = audioCtx.createChannelSplitter(srcCh);
+        sourceNode.connect(split);
+
+        const merger = audioCtx.createChannelMerger(destCh);
+        split.connect(merger, inCh, outL);
+        split.connect(merger, inCh, outR);
+        merger.connect(audioCtx.destination);
+
+        routingNodes = [split, merger];
+
+        log('log-route', `✓ Routing active. Speak/play to test.`, 'pass');
+        log('log-route', `  Signal from input ch ${inCh} should appear on output ch ${outL} and ${outR}`);
+        log('log-route', `  Other output channels should be silent (no feedback loop)`);
+
+        document.getElementById('btn-route').disabled = true;
+        document.getElementById('btn-stop').disabled = false;
+      } catch (err) {
+        log('log-route', 'Error: ' + err.message, 'fail');
+      }
+    });
+
+    document.getElementById('btn-stop').addEventListener('click', () => {
+      routingNodes.forEach(n => { try { n.disconnect(); } catch {} });
+      routingNodes = [];
+      log('log-route', 'Routing stopped.', 'info');
+      document.getElementById('btn-route').disabled = false;
+      document.getElementById('btn-stop').disabled = true;
+    });
+
+    // Metering
+    function startMetering() {
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 2048;
+      sourceNode.connect(analyser);
+
+      const split = audioCtx.createChannelSplitter(sourceNode.channelCount);
+      sourceNode.connect(split);
+      const chCount = sourceNode.channelCount;
+      const analysers = [];
+      for (let c = 0; c < chCount; c++) {
+        const a = audioCtx.createAnalyser();
+        a.fftSize = 512;
+        split.connect(a, c);
+        analysers.push(a);
+      }
+
+      const el = document.getElementById('log-meters');
+      function draw() {
+        let text = '';
+        for (let c = 0; c < analysers.length; c++) {
+          const buf = new Float32Array(analysers[c].fftSize);
+          analysers[c].getFloatTimeDomainData(buf);
+          let sum = 0;
+          for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+          const rms = Math.sqrt(sum / buf.length);
+          const db = rms > 0 ? 20 * Math.log10(rms) : -100;
+          const barLen = Math.max(0, Math.min(40, Math.round((db + 60) * 0.67)));
+          const bar = '█'.repeat(barLen) + '░'.repeat(40 - barLen);
+          text += `Ch ${c}: ${bar} ${db.toFixed(1)} dB\n`;
+        }
+        el.textContent = text;
+        requestAnimationFrame(draw);
+      }
+      draw();
+    }
+  </script>
+</body>
+</html>
