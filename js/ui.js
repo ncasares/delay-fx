@@ -135,6 +135,45 @@ export function buildUI(container) {
   header.appendChild(headerRight);
   container.appendChild(header);
 
+  // Native audio routing (Electron only)
+  let nativeDeviceSelect = null, inputChL = null, inputChR = null, outputChL = null, outputChR = null;
+  if (window.electronAPI?.isElectron) {
+    deviceSelect.style.display = 'none'; // hide browser device selector
+
+    const nativeRow = el('div', 'native-routing');
+
+    const devWrap = el('div', 'native-field');
+    devWrap.appendChild(el('label', 'native-label', 'Device'));
+    nativeDeviceSelect = document.createElement('select');
+    nativeDeviceSelect.className = 'native-select';
+    devWrap.appendChild(nativeDeviceSelect);
+    nativeRow.appendChild(devWrap);
+
+    function chSelect(label, defaultVal) {
+      const wrap = el('div', 'native-field');
+      wrap.appendChild(el('label', 'native-label', label));
+      const sel = document.createElement('select');
+      sel.className = 'native-select native-ch-select';
+      for (let i = 0; i < 16; i++) {
+        const opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = `Ch ${i + 1}`;
+        sel.appendChild(opt);
+      }
+      sel.value = defaultVal;
+      wrap.appendChild(sel);
+      nativeRow.appendChild(wrap);
+      return sel;
+    }
+
+    inputChL = chSelect('In L', 2);
+    inputChR = chSelect('In R', 3);
+    outputChL = chSelect('Out L', 0);
+    outputChR = chSelect('Out R', 1);
+
+    container.appendChild(nativeRow);
+  }
+
   // Algorithm selector
   const algoSection = el('div', 'algo-section');
   const algoRow = el('div', 'algo-row');
@@ -355,6 +394,11 @@ export function buildUI(container) {
     looperTime,
     inputCanvas,
     outputCanvas,
+    nativeDeviceSelect,
+    inputChL,
+    inputChR,
+    outputChL,
+    outputChR,
     ALGORITHMS,
     get currentAlgo() { return currentAlgo; },
     onAlgoChange(fn) { algoListeners.push(fn); },

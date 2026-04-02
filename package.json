@@ -1,0 +1,37 @@
+{
+  "name": "delaystation",
+  "version": "1.0.0",
+  "description": "Browser-based delay workstation with native audio I/O",
+  "main": "electron-main.js",
+  "scripts": {
+    "start": "electron .",
+    "rebuild": "electron-rebuild",
+    "build": "electron-builder --mac"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^25.0.0",
+    "electron-rebuild": "^3.2.9"
+  },
+  "build": {
+    "appId": "com.delaystation.app",
+    "productName": "DELAYSTATION",
+    "mac": {
+      "category": "public.app-category.music",
+      "target": [
+        "dmg"
+      ],
+      "entitlements": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "DELAYSTATION needs audio input access for real-time audio processing"
+      }
+    },
+    "files": [
+      "electron-main.js",
+      "electron-preload.js",
+      "index.html",
+      "css/**",
+      "js/**"
+    ]
+  }
+}

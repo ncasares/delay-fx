@@ -154,6 +154,51 @@ body {
   cursor: default;
 }
 
+/* --- Native Audio Routing (Electron) --- */
+
+.native-routing {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.native-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.native-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.55rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #6a9a6a;
+}
+
+.native-select {
+  font-family: 'Inter', sans-serif;
+  background: rgba(20, 30, 20, 0.8);
+  color: #8ab88a;
+  border: 1px solid #3a5a3a;
+  border-radius: 4px;
+  padding: 0.35rem 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  outline: none;
+}
+
+.native-select:focus {
+  border-color: #5a9a5a;
+}
+
+.native-ch-select {
+  width: 70px;
+}
+
 /* --- Algorithm Selector --- */
 
 .algo-section {

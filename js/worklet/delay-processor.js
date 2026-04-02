@@ -3,6 +3,31 @@
 // All DSP lives here. Runs on the audio thread.
 // ============================================================
 
+// --- Native I/O Ring Buffer (for Electron + PortAudio mode) ---
+
+class RingBuffer {
+  constructor(sab, ringSize) {
+    this.header = new Int32Array(sab, 0, 2);
+    this.data = new Float32Array(sab, 8);
+    this.size = ringSize;
+    this.mask = ringSize - 1;
+  }
+  write(samples, count) {
+    const wp = Atomics.load(this.header, 0);
+    for (let i = 0; i < count; i++) this.data[(wp + i) & this.mask] = samples[i];
+    Atomics.store(this.header, 0, (wp + count) & this.mask);
+  }
+  read(dest, count) {
+    const rp = Atomics.load(this.header, 1);
+    const wp = Atomics.load(this.header, 0);
+    const available = (wp - rp + this.size) & this.mask;
+    if (available < count) { for (let i = 0; i < count; i++) dest[i] = 0; return false; }
+    for (let i = 0; i < count; i++) dest[i] = this.data[(rp + i) & this.mask];
+    Atomics.store(this.header, 1, (rp + count) & this.mask);
+    return true;
+  }
+}
+
 // --- DSP Utilities ---
 
 function hermiteInterpolate(y0, y1, y2, y3, frac) {
@@ -223,6 +248,11 @@ class DelayProcessor extends AudioWorkletProcessor {
     this._loopStateCounter = 0;
     this._loopStateInterval = Math.floor(sr * 0.05); // ~50ms
 
+    // Native I/O (Electron + PortAudio)
+    this.nativeInputRing = null;
+    this.nativeOutputRing = null;
+    this._nativeInputBuf = new Float32Array(128);
+
     this.port.onmessage = (e) => this.handleMessage(e.data);
   }
 
@@ -263,6 +293,9 @@ class DelayProcessor extends AudioWorkletProcessor {
         this.loopState = 'playing';
         this._sendLoopState();
       }
+    } else if (data.type === 'setNativeIO') {
+      this.nativeInputRing = new RingBuffer(data.inputSAB, data.ringSize);
+      this.nativeOutputRing = new RingBuffer(data.outputSAB, data.ringSize);
     }
   }
 
@@ -369,11 +402,19 @@ class DelayProcessor extends AudioWorkletProcessor {
   process(inputs, outputs, parameters) {
     const input = inputs[0];
     const output = outputs[0];
-    if (!input || !input[0]) return true;
 
-    const inp = input[0];
     const outL = output[0];
     const outR = output[1] || output[0];
+
+    // Native I/O: read from PortAudio ring buffer instead of Web Audio input
+    let inp;
+    if (this.nativeInputRing) {
+      this.nativeInputRing.read(this._nativeInputBuf, 128);
+      inp = this._nativeInputBuf;
+    } else {
+      if (!input || !input[0]) return true;
+      inp = input[0];
+    }
 
     const delayTimeMs = parameters.delayTime[0];
     const feedback    = parameters.feedback[0];
@@ -476,6 +517,11 @@ class DelayProcessor extends AudioWorkletProcessor {
       outR[i] = isFinite(finalR) ? finalR : 0;
 
       this.writePos = (this.writePos + 1) & this.mask;
+    }
+
+    // Native I/O: write output to PortAudio ring buffer
+    if (this.nativeOutputRing) {
+      this.nativeOutputRing.write(outL, outL.length);
     }
 
     return true;

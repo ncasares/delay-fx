@@ -1,5 +1,5 @@
 // ============================================================
-// Delay Workstation — Main: audio graph setup and UI wiring
+// DELAYSTATION — Main: audio graph setup and UI wiring
 // ============================================================
 
 import { buildUI, connectParams, setupTapTempo, startMeters, populateDevices, connectLooper } from './ui.js';
@@ -13,6 +13,7 @@ let sourceNode = null;
 let inputAnalyser = null;
 let outputAnalyser = null;
 
+const isElectron = !!window.electronAPI?.isElectron;
 const ui = buildUI(document.getElementById('app'));
 
 // --- Presets ---
@@ -108,75 +109,128 @@ ui.presetImportInput.addEventListener('change', async (e) => {
 // --- MIDI ---
 setupMIDI(ui);
 
-async function startAudio(deviceId) {
-  // Create context on first call
+// --- Electron: populate PortAudio devices ---
+async function populateNativeDevices() {
+  if (!isElectron) return;
+  const devices = await window.electronAPI.getAudioDevices();
+  if (!ui.nativeDeviceSelect) return;
+
+  ui.nativeDeviceSelect.innerHTML = '';
+  const audioDevices = devices.filter(d => d.maxInputChannels > 0 && d.maxOutputChannels > 0);
+  for (const d of audioDevices) {
+    const opt = document.createElement('option');
+    opt.value = d.id;
+    opt.textContent = `${d.name} (${d.maxInputChannels}in/${d.maxOutputChannels}out)`;
+    ui.nativeDeviceSelect.appendChild(opt);
+  }
+}
+
+// --- Audio start (browser mode) ---
+async function startAudioBrowser(deviceId) {
   if (!audioCtx) {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) throw new Error('Web Audio API not supported');
     audioCtx = new AC();
     if (!audioCtx.audioWorklet) {
-      throw new Error('AudioWorklet not available — page must be served over HTTPS or localhost (not 127.0.0.1)');
+      throw new Error('AudioWorklet not available — page must be served over HTTPS or localhost');
     }
     await audioCtx.audioWorklet.addModule('js/worklet/delay-processor.js');
   }
 
-  // Stop previous stream if switching devices
-  if (mediaStream) {
-    mediaStream.getTracks().forEach(t => t.stop());
-  }
-  if (sourceNode) {
-    sourceNode.disconnect();
-  }
+  if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+  if (sourceNode) sourceNode.disconnect();
 
-  // Get mic input
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    throw new Error('getUserMedia not available — are you on localhost or HTTPS?');
+    throw new Error('getUserMedia not available');
   }
   const constraints = {
-    audio: {
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false,
-    },
+    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
   };
-  if (deviceId) {
-    constraints.audio.deviceId = { exact: deviceId };
-  }
+  if (deviceId) constraints.audio.deviceId = { exact: deviceId };
   mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
   sourceNode = audioCtx.createMediaStreamSource(mediaStream);
 
-  // Build graph on first start
   if (!workletNode) {
     workletNode = new AudioWorkletNode(audioCtx, 'delay-processor', {
-      numberOfInputs: 1,
-      numberOfOutputs: 1,
-      outputChannelCount: [2],
+      numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
     });
-
-    // Analysers for metering
     inputAnalyser = audioCtx.createAnalyser();
     inputAnalyser.fftSize = 1024;
     outputAnalyser = audioCtx.createAnalyser();
     outputAnalyser.fftSize = 1024;
-
     workletNode.connect(outputAnalyser);
     outputAnalyser.connect(audioCtx.destination);
-
-    // Wire UI
     connectParams(workletNode, ui);
     setupTapTempo(ui, workletNode);
     startMeters(ui, inputAnalyser, outputAnalyser);
     connectLooper(workletNode, ui);
   }
 
-  // Connect source through input analyser to worklet
   sourceNode.connect(inputAnalyser);
   inputAnalyser.connect(workletNode);
+  await audioCtx.resume();
+  await populateDevices(ui);
+}
+
+// --- Audio start (Electron native mode) ---
+async function startAudioNative() {
+  // Create AudioContext and worklet (still needed for DSP)
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new AC();
+    await audioCtx.audioWorklet.addModule('js/worklet/delay-processor.js');
+  }
+
+  if (!workletNode) {
+    workletNode = new AudioWorkletNode(audioCtx, 'delay-processor', {
+      numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
+    });
+
+    inputAnalyser = audioCtx.createAnalyser();
+    inputAnalyser.fftSize = 1024;
+    outputAnalyser = audioCtx.createAnalyser();
+    outputAnalyser.fftSize = 1024;
+
+    // Connect worklet to analysers (for metering) but NOT to destination
+    // Output goes through PortAudio, not system audio
+    workletNode.connect(outputAnalyser);
+
+    connectParams(workletNode, ui);
+    setupTapTempo(ui, workletNode);
+    startMeters(ui, inputAnalyser, outputAnalyser);
+    connectLooper(workletNode, ui);
+  }
 
   await audioCtx.resume();
 
-  // Populate device list (labels available after getUserMedia)
-  await populateDevices(ui);
+  // Get channel config from UI
+  const deviceId = parseInt(ui.nativeDeviceSelect?.value);
+  const inputChL = parseInt(ui.inputChL?.value ?? 2);
+  const inputChR = parseInt(ui.inputChR?.value ?? 3);
+  const outputChL = parseInt(ui.outputChL?.value ?? 0);
+  const outputChR = parseInt(ui.outputChR?.value ?? 1);
+
+  // Stop previous native stream
+  await window.electronAPI.stopAudio();
+
+  // Start PortAudio stream, get SharedArrayBuffers back
+  const result = await window.electronAPI.startAudio({
+    deviceId,
+    inputChannelL: inputChL,
+    inputChannelR: inputChR,
+    outputChannelL: outputChL,
+    outputChannelR: outputChR,
+    sampleRate: audioCtx.sampleRate,
+    framesPerBuffer: 128,
+  });
+
+  // Pass SharedArrayBuffers to the AudioWorklet
+  workletNode.port.postMessage({
+    type: 'setNativeIO',
+    inputSAB: result.inputSAB,
+    outputSAB: result.outputSAB,
+    ringSize: result.ringSize,
+  });
 }
 
 // --- Start button ---
@@ -184,7 +238,11 @@ ui.startBtn.addEventListener('click', async () => {
   ui.startBtn.textContent = 'Starting…';
   ui.startBtn.disabled = true;
   try {
-    await startAudio();
+    if (isElectron) {
+      await startAudioNative();
+    } else {
+      await startAudioBrowser();
+    }
     ui.startBtn.textContent = 'Audio Running';
   } catch (err) {
     console.error('Failed to start audio:', err);
@@ -197,12 +255,17 @@ ui.startBtn.addEventListener('click', async () => {
   }
 });
 
-// --- Device switching ---
+// --- Device switching (browser mode) ---
 ui.deviceSelect.addEventListener('change', async () => {
-  if (!audioCtx) return;
+  if (!audioCtx || isElectron) return;
   try {
-    await startAudio(ui.deviceSelect.value);
+    await startAudioBrowser(ui.deviceSelect.value);
   } catch (err) {
     console.error('Failed to switch device:', err);
   }
 });
+
+// --- Electron: populate devices on load ---
+if (isElectron) {
+  populateNativeDevices();
+}
