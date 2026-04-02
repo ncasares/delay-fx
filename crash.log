@@ -1,0 +1,33 @@
+PID 76626 received SIGSEGV for address: 0x0
+0   segfault-handler.node               0x000000010dfc0ef8 _ZL16segfault_handleriP9__siginfoPv + 288
+1   libsystem_platform.dylib            0x000000018d501764 _sigtramp + 56
+2   naudiodon.node                      0x000000010dfa172c _ZN10streampunk10getDevicesEP10napi_env__P20napi_callback_info__ + 56
+3   Electron Framework                  0x00000001150076d0 napi_is_detached_arraybuffer + 248
+4   ???                                 0x0000000157e10650 0x0 + 5769332304
+5   ???                                 0x0000000157e0de38 0x0 + 5769322040
+6   ???                                 0x0000000157e0de38 0x0 + 5769322040
+7   ???                                 0x000000015000e9cc 0x0 + 5637204428
+8   ???                                 0x0000000157e0b848 0x0 + 5769312328
+9   ???                                 0x0000000157e0b494 0x0 + 5769311380
+10  Electron Framework                  0x000000010f60adc4 _ZN2v88Unwinder8PCIsInV8EmPKNS_11MemoryRangeEPv + 728
+11  Electron Framework                  0x000000010f505a7c _ZN2v88Function4CallENS_5LocalINS_7ContextEEENS1_INS_5ValueEEEiPS5_ + 468
+12  Electron Framework                  0x0000000114fa8088 _ZN4node13CallbackScopeD1Ev + 1772
+13  Electron Framework                  0x0000000114fa8404 _ZN4node12MakeCallbackEPN2v87IsolateENS0_5LocalINS0_6ObjectEEENS3_INS0_8FunctionEEEiPNS3_INS0_5ValueEEENS_13async_contextE + 264
+14  Electron Framework                  0x000000010e46a0bc _ZN2v89CodeEvent13GetScriptNameEv + 229236
+15  Electron Framework                  0x000000010e3938bc _ZN2v815ValueSerializer8Delegate23GetWasmModuleTransferIdEPNS_7IsolateENS_5LocalINS_16WasmModuleObjectEEE + 114440
+16  Electron Framework                  0x000000010e37ba04 _ZN2v815ValueSerializer8Delegate23GetWasmModuleTransferIdEPNS_7IsolateENS_5LocalINS_16WasmModuleObjectEEE + 16464
+17  Electron Framework                  0x000000010e37bae0 _ZN2v815ValueSerializer8Delegate23GetWasmModuleTransferIdEPNS_7IsolateENS_5LocalINS_16WasmModuleObjectEEE + 16684
+18  Electron Framework                  0x000000010e3b8058 _ZNK2v812BackingStore13MaxByteLengthEv + 5164
+19  Electron Framework                  0x00000001113ef624 ares_dns_rr_get_name + 2377360
+20  Electron Framework                  0x000000010e3b82c8 _ZNK2v812BackingStore13MaxByteLengthEv + 5788
+21  Electron Framework                  0x000000011193e718 fontations_ffi$cxxbridge1$BridgeBitmapGlyph$operator$sizeof + 357424
+22  Electron Framework                  0x0000000111943b24 fontations_ffi$cxxbridge1$BridgeBitmapGlyph$operator$sizeof + 378940
+23  Electron Framework                  0x000000011193fdb8 fontations_ffi$cxxbridge1$BridgeBitmapGlyph$operator$sizeof + 363216
+24  Electron Framework                  0x0000000111c195cc fontations_ffi$cxxbridge1$BridgeBitmapGlyph$operator$sizeof + 3351268
+25  Electron Framework                  0x0000000111c19a54 fontations_ffi$cxxbridge1$BridgeBitmapGlyph$operator$sizeof + 3352428
+26  Electron Framework                  0x00000001116298c4 _ZN3std3sys3pal4unix2os5errno17h9b4b6e1b7af28e15E + 262728
+27  Electron Framework                  0x0000000111649a14 _ZN3std3sys3pal4unix2os5errno17h9b4b6e1b7af28e15E + 394136
+28  Electron Framework                  0x0000000111691658 _ZN3std7process2id17hb9fbed0f3f7b0c03E + 86936
+29  Electron Framework                  0x000000010e23f8b8 Electron Framework + 1996984
+30  Electron Framework                  0x00000001116906f4 _ZN3std7process2id17hb9fbed0f3f7b0c03E + 82996
+31  CoreFoundation                      0x000000018d596a08 __CFRUNLOOP_IS_CALLING_OUT_TO_A_SOURCE0_PERFORM_FUNCTION__ + 28

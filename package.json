@@ -33,5 +33,8 @@
       "css/**",
       "js/**"
     ]
+  },
+  "dependencies": {
+    "naudiodon": "^2.3.6"
   }
 }
